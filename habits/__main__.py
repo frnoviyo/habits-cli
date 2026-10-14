@@ -1,8 +1,6 @@
-"""Permite ejecutar la aplicación con ``python -m habits``."""
-
-import sys
+"""Entry point for `python -m habits`."""
 
 from habits.cli import main
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

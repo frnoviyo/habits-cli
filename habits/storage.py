@@ -1,75 +1,81 @@
-"""Persistencia en un único archivo JSON local (RF-9, RF-11)."""
-
-from __future__ import annotations
+"""Loading and saving habits to the local JSON file. Only module that touches it."""
 
 import json
 import os
+import tempfile
+from datetime import date
 from pathlib import Path
 from typing import Any
 
-VERSION = 1
+from habits.core import Habit
+
+FORMAT_VERSION = 1
 
 
 class StorageError(Exception):
-    """El archivo de datos existe pero no se puede interpretar (RF-11)."""
-
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    """The data file exists but cannot be read or does not follow the schema."""
 
 
 def default_path() -> Path:
-    """Ruta del único archivo de datos: ``habits.json`` en la raíz del proyecto.
-
-    Se resuelve a partir de la ubicación del paquete, no del directorio de
-    trabajo, para que la CLI encuentre siempre los mismos datos se ejecute
-    desde donde se ejecute.
-    """
-    return PROJECT_ROOT / "habits.json"
+    """Return `HABITS_FILE` if set, otherwise `~/.habits.json` (plan D6)."""
+    env_path = os.environ.get("HABITS_FILE")
+    if env_path:
+        return Path(env_path)
+    return Path.home() / ".habits.json"
 
 
-def empty_data() -> dict[str, Any]:
-    """Estructura inicial cuando todavía no hay archivo."""
-    return {"version": VERSION, "habits": []}
+def load_habits(path: Path) -> list[Habit]:
+    """Load habits in creation order; a missing file means no habits (RF-4.5).
 
-
-def load(path: Path) -> dict[str, Any]:
-    """Lee el archivo de datos.
-
-    Si no existe, devuelve una estructura vacía (RF-9). Si existe pero no es
-    JSON válido o no tiene la forma esperada, lanza ``StorageError`` y no
-    escribe nada (RF-11).
+    Raises StorageError if the file is unreadable or malformed; the file is never modified.
     """
     try:
-        raw = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        return empty_data()
-    except OSError as error:
-        raise StorageError(f"No se pudo leer {path}: {error}") from error
-
+        return []
+    except (OSError, UnicodeDecodeError) as exc:
+        raise StorageError(str(path)) from exc
     try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as error:
-        raise StorageError(f"{path} no contiene JSON válido: {error}") from error
-
-    if not isinstance(data, dict) or not isinstance(data.get("habits"), list):
-        raise StorageError(f"{path} no tiene la estructura esperada.")
-
-    return data
+        return _parse(json.loads(text))
+    except (ValueError, TypeError, KeyError) as exc:
+        raise StorageError(str(path)) from exc
 
 
-def save(path: Path, data: dict[str, Any]) -> None:
-    """Escribe el archivo completo, legible por humanos (RF-9).
+def _parse(data: Any) -> list[Habit]:
+    if not isinstance(data, dict) or data.get("version") != FORMAT_VERSION:
+        raise ValueError("unsupported data format")
+    raw_habits = data["habits"]
+    if not isinstance(raw_habits, list):
+        raise ValueError("'habits' must be a list")
+    habits = []
+    for raw in raw_habits:
+        if not isinstance(raw, dict):
+            raise ValueError("each habit must be an object")
+        name, raw_dates = raw["name"], raw["done_dates"]
+        if not isinstance(name, str) or not isinstance(raw_dates, list):
+            raise ValueError("invalid habit fields")
+        # date.fromisoformat raises TypeError for non-strings and ValueError for bad formats.
+        habits.append(Habit(name=name, done_dates={date.fromisoformat(d) for d in raw_dates}))
+    return habits
 
-    Se escribe primero un temporal y luego se reemplaza, para no dejar el
-    archivo a medias si algo falla durante la escritura.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
+def save_habits(path: Path, habits: list[Habit]) -> None:
+    """Write habits atomically: temporary file in the same directory + os.replace (RNF-3)."""
+    data = {
+        "version": FORMAT_VERSION,
+        "habits": [
+            {"name": h.name, "done_dates": [d.isoformat() for d in sorted(h.done_dates)]}
+            for h in habits
+        ],
+    }
+    text = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
-        temporary.write_text(text, encoding="utf-8")
-        os.replace(temporary, path)
-    except OSError as error:
-        temporary.unlink(missing_ok=True)
-        raise StorageError(f"No se pudo escribir {path}: {error}") from error
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as tmp_file:
+            tmp_file.write(text)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
