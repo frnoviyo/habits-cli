@@ -1,6 +1,6 @@
 # Spec 001 — MVP de habits-cli
 
-Estado: aprobada · Fecha: 2026-10-14
+Estado: aprobada (RF-5 añadido y aprobado el 2026-10-15) · Fecha: 2026-10-14
 
 ## 1. Contexto y objetivo
 
@@ -28,6 +28,8 @@ fiable, predecible y fácil de mantener por un desarrollador junior.
   cuente en mi racha.
 - **HU-3**: Como estudiante, quiero listar mis hábitos con su racha actual y si
   ya los hice hoy para saber qué me falta y cómo voy.
+- **HU-4**: Como estudiante, quiero marcar un hábito como hecho ayer para no
+  perder mi racha si olvidé registrarlo a tiempo.
 
 ## 4. Requisitos funcionales
 
@@ -42,6 +44,8 @@ Los criterios de aceptación usan EARS en español:
   normalizados coinciden.
 - **Hoy**: la fecha del calendario local del equipo del usuario en el momento de
   ejecutar el comando.
+- **Ayer**: el día del calendario inmediatamente anterior a «hoy», calculado a
+  partir de ese mismo «hoy» (incluye cambios de mes, de año y el 29 de febrero).
 - **Racha actual**: número de días consecutivos marcados que termina hoy o, si
   hoy no está marcado, ayer. Si no están marcados ni hoy ni ayer, la racha es 0.
 
@@ -71,7 +75,8 @@ Los criterios de aceptación usan EARS en español:
 - RF-2.4: SI no existe ningún hábito con ese nombre normalizado, ENTONCES el
   sistema DEBERÁ mostrar un mensaje de error, salir con un código distinto de 0
   y no crear ni modificar ningún hábito.
-- RF-2.5: El sistema DEBERÁ permitir marcar únicamente el día de hoy.
+- RF-2.5: El sistema DEBERÁ permitir marcar únicamente el día de hoy o, según
+  RF-5, el de ayer.
 
 ### RF-3 — Listar hábitos con su racha (HU-3)
 
@@ -96,6 +101,27 @@ Los criterios de aceptación usan EARS en español:
   salir con un código distinto de 0.
 - RF-4.5: CUANDO se ejecuta por primera vez sin datos previos, el sistema DEBERÁ
   comportarse como si no hubiera hábitos, sin error.
+
+### RF-5 — Marcar un hábito como hecho ayer (HU-4)
+
+- RF-5.1: CUANDO el usuario marca un hábito existente como hecho ayer, indicándolo
+  de forma explícita, y ayer no estaba marcado, el sistema DEBERÁ registrar ayer
+  como día cumplido y confirmarlo con un mensaje que lo diga y que incluya la
+  racha actual resultante.
+- RF-5.2: MIENTRAS el hábito ya esté marcado ayer, CUANDO el usuario lo marque
+  como hecho ayer, el sistema DEBERÁ dejar los datos sin cambios, avisar con un
+  mensaje del tipo «Ya estaba marcado ayer» que incluya la racha actual y salir
+  con código 0.
+- RF-5.3: El sistema DEBERÁ localizar el hábito por su nombre normalizado y, SI
+  no existe, ENTONCES DEBERÁ comportarse como en RF-2.4.
+- RF-5.4: CUANDO el usuario marca un hábito como hecho ayer, el sistema NO DEBERÁ
+  marcar ni desmarcar el día de hoy.
+- RF-5.5: Tras marcar ayer, el sistema DEBERÁ calcular la racha actual con la
+  misma definición de este documento, sin reglas especiales: el día de ayer
+  cuenta igual que si se hubiera marcado en su momento.
+- RF-5.6: El sistema DEBERÁ permitir marcar ayer aunque el hábito se haya creado
+  hoy, porque la fecha de creación no se guarda (guardarla cambiaría el formato
+  de los datos).
 
 ## 5. Requisitos no funcionales
 
@@ -126,12 +152,21 @@ Los criterios de aceptación usan EARS en español:
 | CL-11 | Racha que incluye el 29 de febrero | Se cuenta como consecutiva |
 | CL-12 | Listar sin hábitos | «No hay hábitos todavía», código 0 |
 | CL-13 | Nombre con tildes o eñes («Repasar inglés») | Se acepta y se muestra tal cual |
+| CL-14 | Marcar ayer cuando ayer ya estaba marcado | Aviso, código 0, sin cambios (RF-5.2) |
+| CL-15 | Marcar ayer sin ningún día marcado | Racha 1, «no hecho hoy» (RF-5.4, RF-5.5) |
+| CL-16 | Marcar ayer con hoy marcado y anteayer no | Racha pasa de 1 a 2 |
+| CL-17 | Marcar ayer con hoy, anteayer y el día anterior marcados (hueco en ayer, racha 1 por CL-7) | Las rachas se unen: racha 4 |
+| CL-18 | Marcar ayer con anteayer y el día anterior marcados y hoy no (racha 0 por CL-8) | Racha 3, «no hecho hoy» |
+| CL-19 | Marcar ayer siendo hoy 1 de enero o 1 de marzo de un año bisiesto | Se marca el 31 de diciembre o el 29 de febrero |
+| CL-20 | Marcar ayer un hábito inexistente | Error, no se crea (RF-5.3) |
+| CL-21 | Marcar ayer un hábito creado hoy | Se marca; racha 1 (RF-5.6) |
+| CL-22 | Marcar ayer y después hoy (o al revés) | Los dos días quedan marcados; ninguna marca anula la otra |
 
 ## 7. Fuera de alcance (MVP)
 
 - Borrar o renombrar hábitos.
 - Desmarcar un día ya marcado.
-- Marcar días pasados o futuros.
+- Marcar días anteriores a ayer o días futuros.
 - Racha máxima histórica, totales u otras estadísticas.
 - Frecuencias distintas de la diaria (p. ej., «3 veces por semana»).
 - Varios usuarios, sincronización o acceso remoto.
@@ -139,9 +174,10 @@ Los criterios de aceptación usan EARS en español:
 
 ## 8. Criterios de finalización
 
-- [x] Todos los criterios de RF-1 a RF-4 y todos los casos límite CL-1 a CL-13 están
+- [x] Todos los criterios de RF-1 a RF-5 y todos los casos límite CL-1 a CL-22 están
   cubiertos por pruebas automáticas que pasan.
-- [x] Los tres comandos funcionan de extremo a extremo desde la terminal.
+- [x] Los tres comandos (y la marca de ayer) funcionan de extremo a extremo desde
+  la terminal.
 - [x] Se cumplen los principios de `docs/constitution.md`.
 - [x] No quedan dudas abiertas sin resolver o se han aplazado explícitamente a otra
   spec.

@@ -54,14 +54,21 @@ def add_habit(habits: list[Habit], name: str) -> Habit:
     return habit
 
 
-def mark_done(habits: list[Habit], name: str, today: date) -> tuple[Habit, bool]:
-    """Mark `today` as done; the flag is False if it was already marked (RF-2)."""
+def mark_done(
+    habits: list[Habit], name: str, today: date, *, yesterday: bool = False
+) -> tuple[Habit, bool]:
+    """Mark `today`, or the day before if `yesterday` is True, as done (RF-2, RF-5).
+
+    The flag is False if that day was already marked. Only these two days can be
+    marked (RF-2.5), so the day is derived from `today` rather than passed in.
+    """
     habit = find_habit(habits, name)
     if habit is None:
         raise HabitNotFoundError(name)
-    if today in habit.done_dates:
+    day = today - timedelta(days=1) if yesterday else today
+    if day in habit.done_dates:
         return habit, False
-    habit.done_dates.add(today)
+    habit.done_dates.add(day)
     return habit, True
 
 

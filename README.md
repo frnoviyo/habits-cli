@@ -23,6 +23,9 @@ Hábito «Repasar inglés» creado.
 $ python -m habits hecho "repasar inglés"
 «Repasar inglés» marcado como hecho hoy. Racha actual: 1 día.
 
+$ python -m habits hecho "repasar inglés" --ayer
+«Repasar inglés» marcado como hecho ayer. Racha actual: 2 días.
+
 $ python -m habits listar
 [x] Leer            racha: 3 días
 [ ] Repasar inglés  racha: 1 día
@@ -31,19 +34,22 @@ $ python -m habits listar
 | Comando | Qué hace |
 |---|---|
 | `crear <nombre>` | Crea un hábito. Los nombres con espacios van entre comillas. |
-| `hecho <nombre>` | Marca el hábito como hecho **hoy** (solo se puede marcar el día actual). |
+| `hecho <nombre>` | Marca el hábito como hecho **hoy**. |
+| `hecho <nombre> --ayer` | Marca el hábito como hecho **ayer**, por si olvidaste registrarlo. No se pueden marcar días anteriores ni futuros. |
 | `listar` | Muestra los hábitos en orden de creación, si están hechos hoy (`[x]`/`[ ]`) y su racha. |
 
 - Los nombres no distinguen mayúsculas ni espacios en los extremos: `hecho LEER`
   marca «Leer», y no se puede crear «leer» si ya existe «Leer».
 - **Racha**: días consecutivos marcados que terminan hoy o, si hoy aún no está
-  marcado, ayer. Si no está marcado ni hoy ni ayer, la racha es 0.
+  marcado, ayer. Si no está marcado ni hoy ni ayer, la racha es 0. Marcar ayer
+  cuenta igual que haberlo marcado en su momento: puede unir dos rachas
+  separadas por ese día. En `listar`, `[x]` indica siempre «hecho hoy».
 
 ### Códigos de salida
 
 | Código | Significado |
 |---|---|
-| 0 | Éxito (incluido marcar un hábito que ya estaba marcado hoy) |
+| 0 | Éxito (incluido marcar un día que ya estaba marcado) |
 | 1 | Error de dominio o de datos: duplicado, nombre vacío, hábito inexistente o archivo ilegible |
 | 2 | Uso incorrecto: comando desconocido o faltan argumentos |
 

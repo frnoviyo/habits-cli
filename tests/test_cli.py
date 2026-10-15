@@ -42,6 +42,11 @@ def forbid_save(monkeypatch: pytest.MonkeyPatch) -> None:
         pytest.param(["crear"], "Error: falta el nombre del hábito.", id="crear_without_name"),
         pytest.param(["hecho"], "Error: falta el nombre del hábito.", id="hecho_without_name"),
         pytest.param(["listar", "extra"], "Error: argumentos incorrectos para «listar».", id="extra_args"),
+        # T20: --ayer only belongs to `hecho` and cannot be abbreviated.
+        pytest.param(["crear", "Leer", "--ayer"], "Error: argumentos incorrectos para «crear».", id="ayer_on_crear"),
+        pytest.param(["listar", "--ayer"], "Error: argumentos incorrectos para «listar».", id="ayer_on_listar"),
+        pytest.param(["hecho", "--ayer"], "Error: falta el nombre del hábito.", id="ayer_without_name"),
+        pytest.param(["hecho", "Leer", "--ay"], "Error: argumentos incorrectos para «hecho».", id="ayer_abbreviated"),
     ],
 )
 def test_wrong_usage_shows_spanish_usage_and_returns_2_rf_4_4(
@@ -64,6 +69,7 @@ def test_help_shows_spanish_usage_rf_4_2(
     assert run([flag], data_path) == 0
     out, err = capsys.readouterr()
     assert out.startswith("Uso: python -m habits <comando> [nombre]")
+    assert "hecho <nombre> --ayer" in out
     assert "usage" not in out.lower()
     assert err == ""
 
@@ -159,6 +165,62 @@ def test_hecho_marks_only_the_given_today_rf_2_5(data_path: Path) -> None:
     save_habits(data_path, [Habit(name="Leer")])
     assert run(["hecho", "Leer"], data_path, today=date(2027, 1, 1)) == 0
     assert load_habits(data_path)[0].done_dates == {date(2027, 1, 1)}
+
+
+# --- T21: hecho --ayer ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["hecho", "leer", "--ayer"], id="flag_after_name"),
+        pytest.param(["hecho", "--ayer", "LEER"], id="flag_before_name"),
+    ],
+)
+def test_hecho_ayer_marks_yesterday_rf_5_1_rf_5_4(
+    argv: list[str], data_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    save_habits(data_path, [Habit(name="Leer", done_dates={YESTERDAY - timedelta(days=1)})])
+    assert run(argv, data_path) == 0
+    out, err = capsys.readouterr()
+    assert out == "«Leer» marcado como hecho ayer. Racha actual: 2 días.\n"
+    assert err == ""
+    assert load_habits(data_path)[0].done_dates == {YESTERDAY, YESTERDAY - timedelta(days=1)}
+
+
+def test_hecho_ayer_twice_warns_and_does_not_save_rf_5_2_cl_14(
+    data_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    save_habits(data_path, [Habit(name="Leer", done_dates={YESTERDAY})])
+    before = data_path.read_bytes()
+    forbid_save(monkeypatch)
+    assert run(["hecho", "Leer", "--ayer"], data_path) == 0
+    out, err = capsys.readouterr()
+    assert out == "«Leer» ya estaba marcado ayer. Racha actual: 1 día.\n"
+    assert err == ""
+    assert data_path.read_bytes() == before
+
+
+def test_hecho_ayer_missing_habit_fails_without_changes_rf_5_3_cl_20(
+    data_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    save_habits(data_path, [Habit(name="Leer")])
+    before = data_path.read_bytes()
+    assert run(["hecho", "Correr", "--ayer"], data_path) == 1
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err == "Error: no existe el hábito «Correr». Usa «listar» para ver tus hábitos.\n"
+    assert data_path.read_bytes() == before
+
+
+def test_listar_after_hecho_ayer_shows_not_done_today_rf_5_4_cl_15(
+    data_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(["crear", "Leer"], data_path) == 0
+    assert run(["hecho", "Leer", "--ayer"], data_path) == 0
+    capsys.readouterr()
+    assert run(["listar"], data_path) == 0
+    assert capsys.readouterr().out == "[ ] Leer  racha: 1 día\n"
 
 
 # --- T14: listar ---------------------------------------------------------------
@@ -260,22 +322,25 @@ def test_full_flow_create_mark_list(data_path: Path, capsys: pytest.CaptureFixtu
 # --- T16: python -m habits (smoke) ---------------------------------------------
 
 
-def test_python_m_habits_end_to_end_rf_4_1_rf_4_5(tmp_path: Path) -> None:
+def _habits_cmd(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
         "HABITS_FILE": str(tmp_path / "habits.json"),
         "PYTHONIOENCODING": "utf-8",
     }
+    return subprocess.run(
+        [sys.executable, "-m", "habits", *args],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        timeout=30,
+    )
 
+
+def test_python_m_habits_end_to_end_rf_4_1_rf_4_5(tmp_path: Path) -> None:
     def habits_cmd(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [sys.executable, "-m", "habits", *args],
-            cwd=PROJECT_ROOT,
-            env=env,
-            capture_output=True,
-            encoding="utf-8",
-            timeout=30,
-        )
+        return _habits_cmd(tmp_path, *args)
 
     created = habits_cmd("crear", "Leer")
     assert created.returncode == 0, created.stderr
@@ -284,3 +349,14 @@ def test_python_m_habits_end_to_end_rf_4_1_rf_4_5(tmp_path: Path) -> None:
     listed = habits_cmd("listar")
     assert listed.returncode == 0, listed.stderr
     assert listed.stdout == "[x] Leer  racha: 1 día\n"
+
+
+def test_python_m_habits_hecho_ayer_end_to_end_rf_5_1_cl_15(tmp_path: Path) -> None:
+    """T22: `hecho --ayer` through the real entry point; today stays unmarked."""
+    assert _habits_cmd(tmp_path, "crear", "Leer").returncode == 0
+    marked = _habits_cmd(tmp_path, "hecho", "Leer", "--ayer")
+    assert marked.returncode == 0, marked.stderr
+    assert marked.stdout == "«Leer» marcado como hecho ayer. Racha actual: 1 día.\n"
+    listed = _habits_cmd(tmp_path, "listar")
+    assert listed.returncode == 0, listed.stderr
+    assert listed.stdout == "[ ] Leer  racha: 1 día\n"

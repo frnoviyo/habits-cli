@@ -29,12 +29,13 @@ COMMANDS_WITH_NAME = ("crear", "hecho")
 COMMANDS = (*COMMANDS_WITH_NAME, "listar")
 
 USAGE = """\
-Uso: python -m habits <comando> [nombre]
+Uso: python -m habits <comando> [nombre] [--ayer]
 
 Comandos:
-  crear <nombre>   Crea un hábito nuevo (usa comillas si el nombre tiene espacios).
-  hecho <nombre>   Marca un hábito como hecho hoy.
-  listar           Muestra tus hábitos con su racha actual.
+  crear <nombre>          Crea un hábito nuevo (usa comillas si el nombre tiene espacios).
+  hecho <nombre>          Marca un hábito como hecho hoy.
+  hecho <nombre> --ayer   Marca un hábito como hecho ayer.
+  listar                  Muestra tus hábitos con su racha actual.
 """
 
 
@@ -56,12 +57,15 @@ class SpanishArgumentParser(argparse.ArgumentParser):
 
 
 def build_parser() -> SpanishArgumentParser:
-    """Build the parser for `crear <nombre>`, `hecho <nombre>` and `listar` (plan D1, D2)."""
-    parser = SpanishArgumentParser(prog="python -m habits", add_help=False)
+    """Build the parser for `crear <nombre>`, `hecho <nombre> [--ayer]` and `listar` (plan D1, D2, D10)."""
+    options = {"add_help": False, "allow_abbrev": False}
+    parser = SpanishArgumentParser(prog="python -m habits", **options)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for command in COMMANDS_WITH_NAME:
-        subparsers.add_parser(command, add_help=False).add_argument("name")
-    subparsers.add_parser("listar", add_help=False)
+    subparsers.add_parser("crear", **options).add_argument("name")
+    mark_parser = subparsers.add_parser("hecho", **options)
+    mark_parser.add_argument("name")
+    mark_parser.add_argument("--ayer", action="store_true", dest="yesterday")
+    subparsers.add_parser("listar", **options)
     return parser
 
 
@@ -97,7 +101,7 @@ def main(
     if args.command == "crear":
         return _create(habits, args.name, path)
     if args.command == "hecho":
-        return _mark(habits, args.name, today, path)
+        return _mark(habits, args.name, today, path, yesterday=args.yesterday)
     return _list(habits, today)
 
 
@@ -117,18 +121,19 @@ def _create(habits: list[Habit], name: str, path: Path) -> int:
     return EXIT_OK
 
 
-def _mark(habits: list[Habit], name: str, today: date, path: Path) -> int:
+def _mark(habits: list[Habit], name: str, today: date, path: Path, *, yesterday: bool) -> int:
     try:
-        habit, changed = mark_done(habits, name, today)
+        habit, changed = mark_done(habits, name, today, yesterday=yesterday)
     except HabitNotFoundError:
         _error(f"no existe el hábito «{name.strip()}». Usa «listar» para ver tus hábitos.")
         return EXIT_ERROR
+    day_word = "ayer" if yesterday else "hoy"
     streak = _days_text(current_streak(habit, today))
     if changed:
         save_habits(path, habits)
-        print(f"«{habit.name}» marcado como hecho hoy. Racha actual: {streak}.")
+        print(f"«{habit.name}» marcado como hecho {day_word}. Racha actual: {streak}.")
     else:
-        print(f"«{habit.name}» ya estaba marcado hoy. Racha actual: {streak}.")
+        print(f"«{habit.name}» ya estaba marcado {day_word}. Racha actual: {streak}.")
     return EXIT_OK
 
 
@@ -151,7 +156,8 @@ def _usage_problem(args_list: list[str]) -> str:
     command = args_list[0]
     if command not in COMMANDS:
         return f"comando desconocido «{command}»."
-    if command in COMMANDS_WITH_NAME and len(args_list) == 1:
+    has_name = any(not arg.startswith("-") for arg in args_list[1:])
+    if command in COMMANDS_WITH_NAME and not has_name:
         return "falta el nombre del hábito."
     return f"argumentos incorrectos para «{command}»."
 

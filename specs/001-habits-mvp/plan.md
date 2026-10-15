@@ -1,7 +1,7 @@
 # Plan 001 — MVP de habits-cli
 
 Spec: `specs/001-habits-mvp/spec.md` · Constitución: `docs/constitution.md`
-Estado: borrador · Fecha: 2026-10-14
+Estado: borrador · Fecha: 2026-10-14 · Revisión 2026-10-15: marcar ayer (spec RF-5)
 
 ## 1. Estructura de módulos
 
@@ -23,7 +23,7 @@ habits-cli/
 Dependencias permitidas: `cli → core`, `cli → storage`, `storage → core` (solo el
 modelo `Habit`). `core` no importa nada del proyecto ni hace I/O (Principio 3).
 
-### core.py (RF-1, RF-2, RF-3.2)
+### core.py (RF-1, RF-2, RF-3.2, RF-5)
 
 API pública, toda con type hints:
 
@@ -34,7 +34,7 @@ API pública, toda con type hints:
 | `normalize_name(name) -> str` | `strip()` + `casefold()` | RF-2.2, CL-1, CL-3 |
 | `find_habit(habits, name) -> Habit \| None` | Busca por nombre normalizado | RF-2.2 |
 | `add_habit(habits, name) -> Habit` | Valida, guarda `name.strip()`, añade al final | RF-1.1–1.4 |
-| `mark_done(habits, name, today) -> tuple[Habit, bool]` | Marca `today`; `False` si ya estaba | RF-2.1, RF-2.3–2.5 |
+| `mark_done(habits, name, today, *, yesterday=False) -> tuple[Habit, bool]` | Marca `today` o, con `yesterday=True`, `today − 1 día` (lo calcula el núcleo, D11); `False` si ese día ya estaba; nunca toca el otro día | RF-2.1, RF-2.3–2.5, RF-5.1–5.4, RF-5.6 |
 | `is_done_on(habit, day) -> bool` | ¿Marcado ese día? | RF-3.1 |
 | `current_streak(habit, today) -> int` | Algoritmo de §3 | RF-3.2 |
 
@@ -73,6 +73,7 @@ API pública, toda con type hints:
 - `name` se guarda sin espacios en los extremos y con las mayúsculas originales
   (RF-1.2). El nombre normalizado no se guarda: se calcula al vuelo.
 - `done_dates`: fechas ISO `AAAA-MM-DD`, sin repetir y ordenadas al guardar.
+  Marcar ayer (RF-5) añade una fecha más a esta lista: el formato no cambia.
 - `version` permite migrar el formato en el futuro; cualquier cambio exige
   actualizar antes la spec (P5).
 
@@ -94,16 +95,23 @@ función current_streak(habit, today):
 Coste O(longitud de la racha) con búsqueda O(1) en el conjunto: cumple RNF-2.
 Las fechas posteriores a `today` (reloj atrasado) se ignoran sin error.
 
+Marcar ayer no requiere cambios en el algoritmo (RF-5.5): basta con que la fecha
+esté en `días`. Así, marcar ayer puede unir dos rachas (CL-17) o recuperar una que
+ya contaba 0 (CL-18).
+
 ## 4. Contrato de la CLI
 
-Invocación: `python -m habits <comando> [nombre]`. Los nombres con espacios van
-entre comillas.
+Invocación: `python -m habits <comando> [nombre] [--ayer]`. Los nombres con
+espacios van entre comillas. `--ayer` solo es válido con `hecho` y puede ir antes
+o después del nombre.
 
 | Comando | Ejemplo | Salida (stdout) | Código | RF |
 |---|---|---|---|---|
 | `crear <nombre>` | `crear "Leer"` | `Hábito «Leer» creado.` | 0 | RF-1.1, RF-1.2 |
 | `hecho <nombre>` | `hecho leer` | `«Leer» marcado como hecho hoy. Racha actual: 3 días.` | 0 | RF-2.1, RF-2.2, RF-2.5 |
 | `hecho <nombre>` (repetido) | `hecho leer` | `«Leer» ya estaba marcado hoy. Racha actual: 3 días.` | 0 | RF-2.3 |
+| `hecho <nombre> --ayer` | `hecho leer --ayer` | `«Leer» marcado como hecho ayer. Racha actual: 4 días.` | 0 | RF-5.1, RF-5.3–5.5 |
+| `hecho <nombre> --ayer` (repetido) | `hecho leer --ayer` | `«Leer» ya estaba marcado ayer. Racha actual: 4 días.` | 0 | RF-5.2 |
 | `listar` | `listar` | ver abajo | 0 | RF-3.1, RF-3.2 |
 | `listar` (vacío) | `listar` | `No hay hábitos todavía.` | 0 | RF-3.3 |
 
@@ -114,7 +122,8 @@ Formato del listado (alineado por columnas, solo ASCII en el indicador):
 [ ] Repasar inglés  racha: 1 día
 ```
 
-Singular y plural: «1 día», «N días».
+Singular y plural: «1 día», «N días». El indicador `[x]` sigue significando
+«hecho hoy»: marcar ayer no lo cambia (RF-5.4, CL-15).
 
 Errores (stderr):
 
@@ -122,9 +131,12 @@ Errores (stderr):
 |---|---|---|---|
 | Duplicado | `Error: ya existe un hábito llamado «Leer».` | 1 | RF-1.3 |
 | Nombre vacío | `Error: el nombre del hábito no puede estar vacío.` | 1 | RF-1.4 |
-| No existe | `Error: no existe el hábito «X». Usa «listar» para ver tus hábitos.` | 1 | RF-2.4, RNF-5 |
+| No existe (con o sin `--ayer`) | `Error: no existe el hábito «X». Usa «listar» para ver tus hábitos.` | 1 | RF-2.4, RF-5.3, RNF-5 |
 | Datos ilegibles | `Error: no se pudo leer el archivo de datos <ruta>. Revísalo o muévelo para empezar de cero.` | 1 | RNF-3, RNF-5 |
-| Comando o argumento incorrecto | Texto de uso en español | 2 | RF-4.4 |
+| Comando o argumento incorrecto (incluido `--ayer` en `crear` o `listar`) | Texto de uso en español | 2 | RF-4.4 |
+| `hecho --ayer` sin nombre | `Error: falta el nombre del hábito.` + texto de uso | 2 | RF-4.4 |
+
+El texto de uso añade la línea `hecho <nombre> --ayer   Marca un hábito como hecho ayer.`
 
 Convención de códigos (RF-4.3): 0 = éxito · 1 = error de dominio o de datos ·
 2 = uso incorrecto.
@@ -142,6 +154,8 @@ Convención de códigos (RF-4.3): 0 = éxito · 1 = error de dominio o de datos 
 | D7 | Normalizar con `casefold()` | Comparación sin mayúsculas correcta en Unicode (CL-13) | `lower()`: falla en casos como «ß» |
 | D8 | Mensajes de usuario solo en `cli.py`; `core` lanza excepciones tipadas | Separa lógica e interfaz (P3) | Mensajes dentro de las excepciones del núcleo |
 | D9 | `pyproject.toml` solo con `pythonpath = ["."]` para pytest | `pytest -q` funciona desde la raíz sin instalar el paquete | `conftest.py` que manipula `sys.path`: más frágil |
+| D10 | Marcar ayer con la opción `--ayer` de `hecho`, con `allow_abbrev=False` | Es la misma acción sobre otro día; opción en español (D2, P6); sin abreviaturas ambiguas como `--ay` | Comando nuevo `ayer <nombre>`: duplica la lógica de `hecho` y alarga la ayuda |
+| D11 | El núcleo calcula «ayer» como `today − 1 día` a partir de un indicador booleano; no acepta fechas arbitrarias | Garantiza RF-2.5 en el núcleo puro y reutiliza el «hoy» único de D3 | `mark_done(..., day)` con fecha libre: permitiría marcar cualquier día desde la CLI o los tests |
 
 ### Decisiones sobre las dudas abiertas de la spec
 
@@ -153,6 +167,11 @@ Aprobadas e incorporadas a la spec §9 como D-1…D-4 (tarea T00):
 - **DP3** (medianoche): se usa la fecha leída una vez al inicio del comando (D3).
 - **DP4** (indicador «hecho hoy»): `[x]` / `[ ]` en ASCII, válido en cualquier terminal.
 
+Decisión de la revisión del 2026-10-15 (aprobada con la spec):
+
+- **DP5** (marcar ayer un hábito creado hoy, RF-5.6): se permite, porque no se
+  guarda la fecha de creación y añadirla cambiaría el formato JSON (P5).
+
 ## 6. Estrategia de tests
 
 Principio 4: toda función pública de `core.py` tiene tests y `pytest -q` debe
@@ -161,10 +180,10 @@ pasar. Las fechas son siempre fijas (p. ej., `date(2026, 10, 14)`), nunca
 
 | Archivo | Qué prueba | Cubre |
 |---|---|---|
-| `test_core.py` | `normalize_name`, `find_habit`, `add_habit` (ok, duplicado, vacío), `mark_done` (nuevo, repetido, inexistente), `is_done_on`; `current_streak` parametrizado con una tabla de casos | RF-1.1–1.4, RF-2.1–2.5, RF-3.2; CL-1–CL-11, CL-13 |
+| `test_core.py` | `normalize_name`, `find_habit`, `add_habit` (ok, duplicado, vacío), `mark_done` (nuevo, repetido, inexistente; también con `yesterday=True`), `is_done_on`; `current_streak` parametrizado con una tabla de casos; tabla de «marcar ayer → racha» | RF-1.1–1.4, RF-2.1–2.5, RF-3.2, RF-5.1–5.6; CL-1–CL-11, CL-13–CL-22 |
 | `test_storage.py` | Con `tmp_path`: archivo inexistente → `[]`; guardar y cargar conserva orden y tildes; JSON corrupto → `StorageError` y archivo intacto; no quedan temporales | RF-4.1, RF-4.5, RNF-3, CL-13 |
-| `test_cli.py` | `main([...], today=..., data_path=tmp)` con `capsys`: mensajes exactos, stdout/stderr y código de salida de cada fila del contrato; los errores no modifican el archivo; uso incorrecto → código 2 y texto en español; flujo completo crear → hecho → listar | RF-1…RF-4, CL-4, CL-5, CL-12 |
-| `test_cli.py` (smoke) | Un `subprocess` de `python -m habits listar` con `HABITS_FILE` en `tmp_path` | Funcionamiento de extremo a extremo |
+| `test_cli.py` | `main([...], today=..., data_path=tmp)` con `capsys`: mensajes exactos, stdout/stderr y código de salida de cada fila del contrato; los errores no modifican el archivo; uso incorrecto → código 2 y texto en español; flujo completo crear → hecho → listar; `hecho --ayer` (nuevo, repetido, inexistente, `--ayer` mal usado) | RF-1…RF-5, CL-4, CL-5, CL-12, CL-14, CL-15, CL-20 |
+| `test_cli.py` (smoke) | `subprocess` de `python -m habits` con `HABITS_FILE` en `tmp_path`: crear → hecho → listar, y crear → hecho --ayer → listar | Funcionamiento de extremo a extremo |
 
 Trazabilidad: el nombre o el docstring de cada test indica el RF o CL que cubre
 (p. ej., `test_add_habit_rejects_duplicate_rf_1_3`).
@@ -178,3 +197,5 @@ Trazabilidad: el nombre o el docstring de cada test indica el RF o CL que cubre
 | RF-3.1–3.3 | §1 core, §3, §4, §6 |
 | RF-4.1, RF-4.5 | §1 storage, §2, §6 |
 | RF-4.2–4.4 | §1 cli, §4, D1, D2, §6 |
+| RF-5.1–5.4, RF-5.6 | §1 core, §4, D10, D11, DP5, §6 |
+| RF-5.5 | §3, §6 |

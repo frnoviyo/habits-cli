@@ -1,6 +1,6 @@
 # Tareas 001 — MVP de habits-cli
 
-Spec: `spec.md` · Plan: `plan.md` · Estado: completada · Fecha: 2026-10-14
+Spec: `spec.md` · Plan: `plan.md` · Estado: completada · Fecha: 2026-10-14 · Revisión 2026-10-15: Fase 5 (spec RF-5)
 
 Reglas:
 - Orden de dependencia: no empieces una tarea hasta que estén hechas las anteriores de la que depende (columna «Depende de»).
@@ -108,15 +108,45 @@ Reglas:
   Depende de: T07, T13, T14, T15, T16 · Cubre: todos (spec §8)
   Hecho cuando: `pytest -q` pasa, una búsqueda de cada `rf_x_y`/`cl_n` en `tests/` encuentra al menos un resultado para todos los de la spec y se marcan todos los criterios de la spec §8.
 
+## Fase 5 — Marcar ayer (spec RF-5, plan D10/D11)
+
+- [x] **T18 — Núcleo: marcar ayer**
+  Tests y código de `mark_done(..., yesterday=True)`: marca `today − 1 día`, repetido devuelve `False` sin cambios, inexistente lanza `HabitNotFoundError`, no toca `today`, funciona con un hábito sin días (creado hoy) y en cambio de año o bisiesto.
+  Depende de: T05 · Cubre: RF-2.5, RF-5.1, RF-5.2, RF-5.3, RF-5.4, RF-5.6 · CL-14, CL-19, CL-20, CL-21, CL-22
+  Hecho cuando: cada caso tiene un test que pasa, los tests de T05 siguen pasando sin cambios y `mark_done` no acepta ninguna fecha que no sea `today` o `today − 1 día`.
+
+- [x] **T19 — Racha tras marcar ayer**
+  Test parametrizado «estado inicial → `mark_done(..., yesterday=True)` → `current_streak`» con los casos de la spec. No se espera código nuevo (plan §3); si algún caso falla, corregir el núcleo.
+  Depende de: T06, T18 · Cubre: RF-5.5 · CL-15, CL-16, CL-17, CL-18
+  Hecho cuando: la tabla incluye un caso por CL-15…CL-18 con la racha exacta de la spec (1, 2, 4 y 3) y todos pasan.
+
+- [x] **T20 — Parser: opción `--ayer`**
+  Añadir `--ayer` solo al subcomando `hecho` (antes o después del nombre), `allow_abbrev=False` y la línea nueva en el texto de uso.
+  Depende de: T11 · Cubre: RF-4.2, RF-4.4
+  Hecho cuando: hay tests que comprueban que `--ayer` en `crear` o `listar` devuelve 2, que `hecho --ayer` sin nombre muestra «Error: falta el nombre del hábito.» con código 2, que `--ay` no se acepta y que el uso muestra `hecho <nombre> --ayer`.
+
+- [x] **T21 — Comando `hecho --ayer`**
+  Conectar `--ayer` con `mark_done(..., yesterday=True)`; mensajes de marca nueva y ya marcado ayer del contrato (plan §4); guardar solo si hubo cambios.
+  Depende de: T13, T18, T20 · Cubre: RF-5.1, RF-5.2, RF-5.3, RF-5.4, RF-4.3 · CL-14, CL-15, CL-20
+  Hecho cuando: los tests comprueban los mensajes exactos y los códigos (0, 0, 1), que la marca repetida no reescribe el archivo, que el inexistente no lo modifica y que después `listar` sigue mostrando `[ ]` si hoy no estaba marcado.
+
+- [x] **T22 — Extremo a extremo, documentación y cierre de RF-5**
+  Test smoke con `subprocess` (`crear` → `hecho --ayer` → `listar`); actualizar el `README.md` con `--ayer`; repetir la comprobación de trazabilidad de T17 para RF-5 y CL-14…CL-22; probar a mano.
+  Depende de: T19, T21 · Cubre: RF-5 completo (spec §8)
+  Hecho cuando: `pytest -q` pasa, la búsqueda de cada `rf_5_y`/`cl_14`…`cl_22` en `tests/` encuentra al menos un resultado, se marcan de nuevo los criterios de la spec §8 y el estado de este archivo vuelve a «completada».
+
 ## Matriz RF → tareas
 
 | RF | Tareas |
 |---|---|
 | RF-1.1–1.4 | T04, T12 |
-| RF-2.1–2.5 | T05, T13 (RF-2.2 también T03) |
+| RF-2.1–2.5 | T05, T13 (RF-2.2 también T03; RF-2.5 también T18) |
 | RF-3.1, RF-3.3 | T14 |
 | RF-3.2 | T06, T14 |
 | RF-4.1 | T08, T09, T10, T16 |
-| RF-4.2, RF-4.4 | T11 |
-| RF-4.3 | T11, T12, T13, T15 |
+| RF-4.2, RF-4.4 | T11, T20 |
+| RF-4.3 | T11, T12, T13, T15, T21 |
 | RF-4.5 | T09, T12, T16 |
+| RF-5.1–5.4 | T18, T21, T22 |
+| RF-5.5 | T19 |
+| RF-5.6 | T18 |
